@@ -1,4 +1,4 @@
-"""Builds and maintains the in-memory file/folder index, backed by SQLite.
+r"""Builds and maintains the in-memory file/folder index, backed by SQLite.
 
 Indexing approach
 ------------------
