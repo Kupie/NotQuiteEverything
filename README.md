@@ -34,6 +34,9 @@ for **Restore** and **Exit**. The visible Exit button also terminates the
 application. If the tray icon cannot be created, closing the window exits
 normally rather than hiding an inaccessible app. The tray uses only built-in
 Windows APIs via ctypes, without pywin32 or Pillow.
+Both the Windows notification-area icon and the application window/taskbar icon
+use `assets/notquiteeverything.ico`, generated from the orange magnifying
+glass image. The ICO includes 16×16, 32×32 and 256×256 sizes.
 
 ## Features
 

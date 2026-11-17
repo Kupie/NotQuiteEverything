@@ -13,6 +13,7 @@ from .config import Settings
 from .indexer import Indexer
 from .models import FileRecord, SearchResult
 from .search_engine import SearchEngine
+from .resources import APP_ICON_PATH
 from .watcher import WindowsDirectoryWatcher
 from .tray import WindowsTrayIcon
 
@@ -71,6 +72,8 @@ class App:
 
     def _build_widgets(self) -> None:
         self.root.title("NotQuiteEverything")
+        if sys.platform == "win32":
+            self.root.iconbitmap(default=str(APP_ICON_PATH))
         self.root.geometry("1050x650")
         top = ttk.Frame(self.root)
         top.pack(fill=tk.X, padx=7, pady=7)

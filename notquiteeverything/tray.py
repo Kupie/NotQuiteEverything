@@ -13,6 +13,8 @@ import queue
 import sys
 import threading
 
+from .resources import APP_ICON_PATH
+
 logger = logging.getLogger(__name__)
 
 WM_DESTROY = 0x0002
@@ -32,7 +34,9 @@ MF_STRING = 0
 MF_SEPARATOR = 0x0800
 TPM_RIGHTBUTTON = 0x0002
 TPM_RETURNCMD = 0x0100
-IDI_APPLICATION = 32512
+IMAGE_ICON = 1
+LR_LOADFROMFILE = 0x0010
+LR_DEFAULTSIZE = 0x0040
 MENU_RESTORE = 101
 MENU_EXIT = 102
 
@@ -52,6 +56,7 @@ class WindowsTrayIcon:
         self._thread: threading.Thread | None = None
         self._hwnd = None
         self._nid = None
+        self._icon_handle = None
         self._wndproc_callback = None
         self._user32 = None
         self._shell32 = None
@@ -169,8 +174,13 @@ class WindowsTrayIcon:
         user32.GetMessageW.restype = ctypes.c_int
         user32.TranslateMessage.argtypes = [ctypes.POINTER(wintypes.MSG)]
         user32.DispatchMessageW.argtypes = [ctypes.POINTER(wintypes.MSG)]
-        user32.LoadIconW.argtypes = [wintypes.HINSTANCE, wintypes.LPCWSTR]
-        user32.LoadIconW.restype = wintypes.HICON
+        user32.LoadImageW.argtypes = [
+            wintypes.HINSTANCE, wintypes.LPCWSTR, wintypes.UINT,
+            ctypes.c_int, ctypes.c_int, wintypes.UINT,
+        ]
+        user32.LoadImageW.restype = wintypes.HANDLE
+        user32.DestroyIcon.argtypes = [wintypes.HICON]
+        user32.DestroyIcon.restype = wintypes.BOOL
         user32.RegisterWindowMessageW.argtypes = [wintypes.LPCWSTR]
         user32.RegisterWindowMessageW.restype = wintypes.UINT
         user32.CreatePopupMenu.argtypes = []
@@ -235,9 +245,11 @@ class WindowsTrayIcon:
         nid.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP
         nid.uCallbackMessage = CALLBACK_MESSAGE
         nid.szTip = self.title[:127]
-        nid.hIcon = user32.LoadIconW(
-            None, ctypes.cast(ctypes.c_void_p(IDI_APPLICATION), wintypes.LPCWSTR)
+        nid.hIcon = user32.LoadImageW(
+            None, str(APP_ICON_PATH), IMAGE_ICON, 0, 0,
+            LR_LOADFROMFILE | LR_DEFAULTSIZE,
         )
+        self._icon_handle = nid.hIcon
         if not nid.hIcon:
             user32.DestroyWindow(hwnd)
             raise ctypes.WinError(ctypes.get_last_error())
@@ -273,6 +285,9 @@ class WindowsTrayIcon:
         self._available.clear()
         if self._nid is not None and self._shell32 is not None:
             self._shell32.Shell_NotifyIconW(NIM_DELETE, ctypes.byref(self._nid))
+        if self._icon_handle and self._user32 is not None:
+            self._user32.DestroyIcon(self._icon_handle)
+            self._icon_handle = None
 
     def _show_menu(self) -> None:
         user32 = self._user32
