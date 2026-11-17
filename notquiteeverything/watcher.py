@@ -107,7 +107,7 @@ class WindowsDirectoryWatcher:
                     relative = buffer.raw[offset + 12:offset + 12 + length].decode(
                         "utf-16-le", errors="replace"
                     )
-                    paths.append(os.path.normpath(os.path.join(root, relative)))
+                    paths.append((os.path.normpath(os.path.join(root, relative)), action))
                     if not next_offset:
                         break
                     offset += next_offset
