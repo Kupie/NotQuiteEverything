@@ -1,6 +1,7 @@
 """Cross-platform regression tests for persistence, search, and incremental updates."""
 
 import gc
+from contextlib import closing
 import json
 import os
 import sqlite3
@@ -144,16 +145,17 @@ class ConfigTests(unittest.TestCase):
             (legacy / "settings.json").write_text(json.dumps({
                 "scan_roots": ["C:\\\\"], "rescan_interval_seconds": 600,
             }))
-            with sqlite3.connect(str(legacy / "index.db")) as con:
+            with closing(sqlite3.connect(str(legacy / "index.db"))) as con:
                 con.execute("CREATE TABLE example (value TEXT)")
                 con.execute("INSERT INTO example VALUES ('migrated')")
+                con.commit()
             with mock.patch.object(config, "__file__", str(package / "config.py")):
                 with mock.patch.dict(os.environ, {"LOCALAPPDATA": str(base / "LocalAppData"),
                                                   "APPDATA": str(base / "OldAppData")}):
                     settings = config.Settings.load()
-            self.assertEqual(settings.config_path, repo / "settings.json")
-            self.assertEqual(settings.db_path, repo / "index.db")
-            with sqlite3.connect(str(settings.db_path)) as con:
+            self.assertEqual(settings.config_path.resolve(), (repo / "settings.json").resolve())
+            self.assertEqual(settings.db_path.resolve(), (repo / "index.db").resolve())
+            with closing(sqlite3.connect(str(settings.db_path))) as con:
                 self.assertEqual(con.execute("SELECT value FROM example").fetchone()[0], "migrated")
 
     def test_old_settings_and_bad_interval(self):
