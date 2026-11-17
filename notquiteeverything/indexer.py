@@ -119,6 +119,7 @@ class Indexer:
         normalized = path.replace("\\", "/").casefold()
         basename = normalized.rsplit("/", 1)[-1]
         return any(fnmatch.fnmatchcase(normalized, pattern) or
+                   (pattern.endswith("/*") and fnmatch.fnmatchcase(normalized, pattern[:-2])) or
                    ("/" not in pattern and fnmatch.fnmatchcase(basename, pattern))
                    for pattern in self.excludes)
 
