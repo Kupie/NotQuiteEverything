@@ -25,6 +25,15 @@ are copied/migrated to that folder when possible. The originals are not
 deleted. SQLite can create temporary `index.db-wal` and `index.db-shm`
 files beside the database.
 
+### Single-instance launch
+
+Starting `run.pyw` again while NotQuiteEverything is running restores and
+focuses the existing search window, including when hidden in the tray. The
+second launcher exits immediately without creating a new GUI or indexing
+process. An unprivileged named Windows mutex prevents duplicates, and a
+named event wakes the existing application; no ports or third-party packages
+are required. The restriction applies to the current Windows logon session.
+
 ### Minimize to tray
 
 Minimize the window or click its title-bar X to hide it in the Windows

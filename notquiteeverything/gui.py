@@ -444,7 +444,7 @@ class App:
         else:
             self.on_close()
 
-    def _restore_from_tray(self) -> None:
+    def restore_window(self) -> None:
         self.root.deiconify()
         self.root.state("normal")
         self.root.lift()
@@ -456,7 +456,7 @@ class App:
             while True:
                 action = self.tray.events.get_nowait()
                 if action == "restore":
-                    self._restore_from_tray()
+                    self.restore_window()
                 elif action == "exit":
                     self.on_close()
                     return
