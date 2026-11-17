@@ -3,7 +3,6 @@
 import datetime
 import os
 import queue
-import subprocess
 import sys
 import threading
 import tkinter as tk
@@ -15,6 +14,7 @@ from .models import FileRecord, SearchResult
 from .search_engine import SearchEngine
 from .resources import APP_ICON_PATH
 from .watcher import WindowsDirectoryWatcher
+from .windows_shell import reveal_in_explorer
 from .tray import WindowsTrayIcon
 
 DEBOUNCE_MS = 150
@@ -337,7 +337,7 @@ class App:
             return
         try:
             if sys.platform == "win32":
-                subprocess.Popen(["explorer.exe", "/select," + path])
+                reveal_in_explorer(path)
             else:
                 messagebox.showinfo("Windows only", "Explorer integration requires Windows.")
         except OSError as exc:
