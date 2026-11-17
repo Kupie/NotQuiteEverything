@@ -7,6 +7,7 @@ removes stale entries after a *successful* complete scan.
 """
 
 import fnmatch
+from contextlib import closing
 import json
 import logging
 import os
@@ -63,7 +64,7 @@ class Indexer:
     def initialize(self) -> tuple[int, bool]:
         """Initialize or migrate the database; return (cached count, cache matches settings)."""
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        with self._connect() as con:
+        with closing(self._connect()) as con:
             con.execute("PRAGMA journal_mode=WAL")
             con.execute("""
                 CREATE TABLE IF NOT EXISTS files (
@@ -265,7 +266,7 @@ class Indexer:
         if not self.ready.is_set() or not self._scan_lock.acquire(blocking=False):
             return False
         try:
-            with self._connect() as con:
+            with closing(self._connect()) as con:
                 batch = []
                 for raw in set(paths):
                     path = os.path.normpath(raw)
@@ -382,7 +383,7 @@ class Indexer:
         clause = " AND ".join(conditions)
         limit = min(PAGE_LIMIT, max(1, int(limit)))
         offset = max(0, int(offset))
-        with self._connect() as con:
+        with closing(self._connect()) as con:
             rows = con.execute(
                 f"SELECT name, path, is_dir, size, mtime FROM files WHERE {clause} "
                 f"ORDER BY {order} LIMIT ? OFFSET ?",
