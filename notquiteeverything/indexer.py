@@ -270,7 +270,8 @@ class Indexer:
             with closing(self._connect()) as con:
                 batch = []
                 for raw in set(paths):
-                    path = os.path.normpath(raw)
+                    path, action = raw if isinstance(raw, tuple) else (raw, 1)
+                    path = os.path.normpath(path)
                     if not any(os.path.normcase(path) == os.path.normcase(root) or
                                os.path.normcase(path).startswith(os.path.normcase(_subtree_prefix(root)))
                                for root in self.roots):
@@ -282,7 +283,14 @@ class Indexer:
                         self._remove_subtree(con, path)
                         continue
                     if os.path.isdir(path):
-                        # Reconcile the whole subtree, including removed children.
+                        # Modified directories need only metadata refresh.
+                        # New/renamed directories must index their descendants.
+                        if action == 3:
+                            try:
+                                batch.append(self._record(path, True, os.stat(path, follow_symlinks=False)))
+                            except OSError:
+                                pass
+                            continue
                         self._remove_subtree(con, path)
                         stack = [path]
                         while stack:
