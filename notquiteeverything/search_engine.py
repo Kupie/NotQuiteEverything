@@ -1,78 +1,65 @@
-"""Background substring search over the in-memory index.
-
-The GUI debounces keystrokes (~150ms, see gui.py) before ever calling
-``submit_query``, so this module doesn't debounce -- it just guarantees
-that filtering a (possibly large) index never runs on the Tk main thread,
-and that only the *latest* submitted query's results ever get delivered
-(a "latest wins" pattern, so a burst of fast typing doesn't cause slow
-filters to overwrite fresher results out of order).
-"""
+"""Coalescing background queries; the Tk main thread never touches SQLite."""
 
 import queue
 import threading
 
 from .indexer import Indexer
-from .models import FileRecord
+from .models import SearchResult
 
 
 class SearchEngine:
-	def __init__(self, indexer: Indexer):
-		self.indexer = indexer
+    def __init__(self, indexer: Indexer):
+        self.indexer = indexer
+        self._lock = threading.Lock()
+        self._pending = None
+        self._generation = 0
+        self._wake = threading.Event()
+        self._stop = threading.Event()
+        self.result_queue: queue.Queue[tuple[int, str, SearchResult]] = queue.Queue()
+        self._worker = threading.Thread(target=self._work, daemon=True, name="SearchWorker")
 
-		self._lock = threading.Lock()
-		self._pending_query: str | None = None
-		self._generation = 0
-		self._wake_event = threading.Event()
-		self._stop_event = threading.Event()
+    def start(self) -> None:
+        self._worker.start()
 
-		self.result_queue: "queue.Queue[tuple[int, str, list[FileRecord]]]" = queue.Queue()
+    def stop(self) -> None:
+        self._stop.set()
+        self._wake.set()
 
-		self._worker = threading.Thread(target=self._worker_loop, daemon=True, name="SearchWorker")
+    def submit_query(
+        self, query: str, sort_column: str = "name",
+        descending: bool = False, limit: int = 500, offset: int = 0,
+    ) -> None:
+        with self._lock:
+            self._generation += 1
+            self._pending = (self._generation, query, sort_column, descending, limit, offset)
+        self._wake.set()
 
-	def start(self) -> None:
-		self._worker.start()
-
-	def stop(self) -> None:
-		self._stop_event.set()
-		self._wake_event.set()
-
-	def submit_query(self, query: str) -> None:
-		"""Ask the worker thread to (re-)filter using ``query``.
-
-		Safe to call rapidly; only the most recent call before the worker
-		picks it up actually gets filtered.
-		"""
-		with self._lock:
-			self._generation += 1
-			self._pending_query = query
-		self._wake_event.set()
-
-	def _worker_loop(self) -> None:
-		while not self._stop_event.is_set():
-			self._wake_event.wait()
-			self._wake_event.clear()
-			if self._stop_event.is_set():
-				return
-
-			with self._lock:
-				query = self._pending_query
-				generation = self._generation
-				self._pending_query = None
-			if query is None:
-				continue
-
-			results = self._filter(query)
-
-			with self._lock:
-				stale = generation != self._generation
-			if stale:
-				continue  # a newer query has already been submitted; drop this result
-
-			self.result_queue.put((generation, query, results))
-
-	def _filter(self, query: str) -> list[FileRecord]:
-		records = self.indexer.get_records_snapshot()
-		q = query.strip().lower()
-		if not q:
-			return []
-		return [r for r in records if q in r.name.lower()]
+    def _work(self) -> None:
+        while not self._stop.is_set():
+            self._wake.wait()
+            self._wake.clear()
+            if self._stop.is_set():
+                return
+            with self._lock:
+                request = self._pending
+                self._pending = None
+            if request is None:
+                continue
+            generation, query, sort, descending, limit, offset = request
+            if not self.indexer.ready.wait(timeout=10):
+                result = SearchResult(error="Index database is still initializing")
+            else:
+                try:
+                    result = self.indexer.search(query, sort, descending, limit, offset)
+                except Exception as exc:
+                    result = SearchResult(error=str(exc))
+            with self._lock:
+                if generation != self._generation:
+                    continue
+            # Discard already queued older results, including after a rescan.
+            try:
+                while True:
+                    self.result_queue.get_nowait()
+            except queue.Empty:
+                pass
+            self.result_queue.put((generation, query, result))

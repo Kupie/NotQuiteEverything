@@ -216,3 +216,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Portable NotQuiteEverything runtime state (may contain private paths)
+index.db
+index.db-wal
+index.db-shm
+index.db-journal
+settings.json
+settings.tmp
