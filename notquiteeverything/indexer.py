@@ -43,6 +43,12 @@ class Indexer:
         self.roots = [os.path.normpath(os.path.abspath(os.path.expandvars(root)))
                       for root in settings.scan_roots]
         self.excludes = [pattern.replace("\\", "/").casefold() for pattern in settings.exclude_patterns]
+        # The index is commonly inside a watched scan root (e.g. C:\\).
+        # Ignore our own SQLite files or each DB write causes more watches/writes.
+        self._internal_paths = {
+            os.path.normcase(os.path.abspath(str(self.db_path) + suffix))
+            for suffix in ("", "-wal", "-shm", "-journal")
+        }
         self.ready = threading.Event()
         self.stop_event = threading.Event()
         self._scan_lock = threading.Lock()
@@ -116,6 +122,8 @@ class Indexer:
         return self.indexed_count, valid
 
     def _excluded(self, path: str) -> bool:
+        if os.path.normcase(os.path.abspath(path)) in self._internal_paths:
+            return True
         normalized = path.replace("\\", "/").casefold()
         basename = normalized.rsplit("/", 1)[-1]
         return any(fnmatch.fnmatchcase(normalized, pattern) or
@@ -270,8 +278,7 @@ class Indexer:
             with closing(self._connect()) as con:
                 batch = []
                 for raw in set(paths):
-                    path, action = raw if isinstance(raw, tuple) else (raw, 1)
-                    path = os.path.normpath(path)
+                    path = os.path.normpath(raw)
                     if not any(os.path.normcase(path) == os.path.normcase(root) or
                                os.path.normcase(path).startswith(os.path.normcase(_subtree_prefix(root)))
                                for root in self.roots):
@@ -283,14 +290,7 @@ class Indexer:
                         self._remove_subtree(con, path)
                         continue
                     if os.path.isdir(path):
-                        # Modified directories need only metadata refresh.
-                        # New/renamed directories must index their descendants.
-                        if action == 3:
-                            try:
-                                batch.append(self._record(path, True, os.stat(path, follow_symlinks=False)))
-                            except OSError:
-                                pass
-                            continue
+                        # Reconcile the whole subtree, including removed children.
                         self._remove_subtree(con, path)
                         stack = [path]
                         while stack:

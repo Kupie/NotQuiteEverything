@@ -11,18 +11,38 @@ DEFAULT_RESCAN_INTERVAL_SECONDS = 1800
 
 
 def get_app_data_dir() -> Path:
-    """Use non-roaming app data; migrate files from older roaming installs."""
-    base = Path(os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA") or Path.home())
-    app_dir = base / APP_NAME
+    """Place settings and index.db next to the run.pyw launcher.
+
+    Import a previous AppData index using SQLite backup so any WAL contents
+    are included. Local files always take precedence over legacy copies.
+    """
+    app_dir = Path(__file__).resolve().parent.parent
     app_dir.mkdir(parents=True, exist_ok=True)
-    old_base = os.environ.get("APPDATA")
-    if old_base and Path(old_base).resolve() != base.resolve():
-        legacy = Path(old_base) / APP_NAME
-        for filename in ("settings.json", "index.db"):
-            source, target = legacy / filename, app_dir / filename
-            if source.is_file() and not target.exists():
+    for variable in ("LOCALAPPDATA", "APPDATA"):
+        base = os.environ.get(variable)
+        if not base:
+            continue
+        legacy = Path(base) / APP_NAME
+        settings_from = legacy / "settings.json"
+        settings_to = app_dir / "settings.json"
+        if not settings_to.exists() and settings_from.is_file():
+            try:
+                shutil.copy2(settings_from, settings_to)
+            except OSError:
+                pass
+        db_from = legacy / "index.db"
+        db_to = app_dir / "index.db"
+        if not db_to.exists() and db_from.is_file():
+            try:
+                from contextlib import closing
+                import sqlite3
+                with closing(sqlite3.connect(str(db_from))) as source:
+                    with closing(sqlite3.connect(str(db_to))) as target:
+                        source.backup(target)
+                        target.commit()
+            except (OSError, sqlite3.Error):
                 try:
-                    shutil.copy2(source, target)
+                    db_to.unlink(missing_ok=True)
                 except OSError:
                     pass
     return app_dir

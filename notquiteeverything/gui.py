@@ -14,6 +14,7 @@ from .indexer import Indexer
 from .models import FileRecord, SearchResult
 from .search_engine import SearchEngine
 from .watcher import WindowsDirectoryWatcher
+from .tray import WindowsTrayIcon
 
 DEBOUNCE_MS = 150
 POLL_MS = 75
@@ -57,10 +58,15 @@ class App:
         self._page = 0
         self._note = "Initializing index..."
         self._scan_progress = None
+        self._exiting = False
+        self.tray = WindowsTrayIcon()
+        self.tray.start()
 
         self._build_widgets()
         self.root.after(POLL_MS, self._poll_status)
         self.root.after(POLL_MS, self._poll_results)
+        self.root.after(POLL_MS, self._poll_tray)
+        self.root.bind("<Unmap>", self._on_unmap, add="+")
         self._update_status()
 
     def _build_widgets(self) -> None:
@@ -79,6 +85,9 @@ class App:
         self.rebuild_button = ttk.Button(top, text="Rebuild Index", command=self._rebuild)
         self.rebuild_button.pack(side=tk.LEFT, padx=(7, 0))
         ttk.Button(top, text="Settings...", command=self._settings_dialog).pack(
+            side=tk.LEFT, padx=(7, 0)
+        )
+        ttk.Button(top, text="Exit", command=self.on_close).pack(
             side=tk.LEFT, padx=(7, 0)
         )
 
@@ -413,7 +422,54 @@ class App:
         ttk.Button(buttons, text="Save", command=save).pack(side=tk.RIGHT, padx=5)
         ttk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side=tk.RIGHT)
 
+    def _on_unmap(self, event) -> None:
+        # Minimize to the notification area instead of leaving a taskbar button.
+        # Defer to Tk's idle loop, after Windows has changed the window state.
+        if event.widget is self.root:
+            self.root.after_idle(self._hide_if_iconic)
+
+    def _hide_if_iconic(self) -> None:
+        if not self._exiting and self.tray.is_available and self.root.state() == "iconic":
+            self.root.withdraw()
+
+    def on_close_request(self) -> None:
+        # The title-bar X hides the app too. Use Exit in the tray menu (or
+        # the visible Exit button) to terminate watchers and the search worker.
+        # If Windows rejected the tray icon, never make the UI inaccessible.
+        if self.tray.is_available:
+            self.root.withdraw()
+        else:
+            self.on_close()
+
+    def _restore_from_tray(self) -> None:
+        self.root.deiconify()
+        self.root.state("normal")
+        self.root.lift()
+        self.root.focus_force()
+        self.search_entry.focus_set()
+
+    def _poll_tray(self) -> None:
+        try:
+            while True:
+                action = self.tray.events.get_nowait()
+                if action == "restore":
+                    self._restore_from_tray()
+                elif action == "exit":
+                    self.on_close()
+                    return
+                elif isinstance(action, tuple) and action[0] == "error":
+                    self._note = action[1]
+                    self._update_status()
+        except queue.Empty:
+            pass
+        if not self._exiting:
+            self.root.after(POLL_MS, self._poll_tray)
+
     def on_close(self) -> None:
+        if self._exiting:
+            return
+        self._exiting = True
+        self.tray.stop()
         self.indexer.stop()
         self.search_engine.stop()
         if self._watcher:

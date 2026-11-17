@@ -18,7 +18,7 @@ def main() -> None:
     engine.start()
     root = tk.Tk()
     app = App(root, settings, indexer, engine)
-    root.protocol("WM_DELETE_WINDOW", app.on_close)
+    root.protocol("WM_DELETE_WINDOW", app.on_close_request)
     app.start_initial_index()
     root.mainloop()
 

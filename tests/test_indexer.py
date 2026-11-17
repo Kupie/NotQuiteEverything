@@ -2,6 +2,9 @@
 
 import gc
 import json
+import os
+import sqlite3
+from unittest import mock
 import time
 import tempfile
 import unittest
@@ -77,6 +80,23 @@ class IndexTests(unittest.TestCase):
         self.assertEqual(self.indexer.search("path:Projects").total, 0)
         self.assertEqual(self.indexer.search("folder:Renamed").total, 2)
 
+    def test_index_does_not_index_or_update_its_own_database(self):
+        # The database may sit inside a monitored scan root in portable mode.
+        self.indexer.stop()
+        settings = Settings(
+            scan_roots=[str(self.base)],
+            config_path=self.base / "settings.json",
+            db_path=self.base / "index.db",
+        )
+        indexer = Indexer(settings)
+        indexer.initialize()
+        count, complete, error = indexer.scan()
+        self.assertTrue(complete, error)
+        self.assertEqual(indexer.search("index.db").total, 0)
+        self.assertTrue(indexer.apply_changes([str(self.base / "index.db")]))
+        self.assertEqual(indexer.search("index.db").total, 0)
+        indexer.stop()
+
     def test_page_and_sort(self):
         self.indexer.scan()
         first = self.indexer.search("2", "name", False, 1, 0)
@@ -112,6 +132,30 @@ class IndexTests(unittest.TestCase):
 
 
 class ConfigTests(unittest.TestCase):
+    def test_portable_database_and_migration(self):
+        from notquiteeverything import config
+        with tempfile.TemporaryDirectory() as work:
+            base = Path(work)
+            repo = base / "repository"
+            package = repo / "notquiteeverything"
+            package.mkdir(parents=True)
+            legacy = base / "LocalAppData" / "NotQuiteEverything"
+            legacy.mkdir(parents=True)
+            (legacy / "settings.json").write_text(json.dumps({
+                "scan_roots": ["C:\\\\"], "rescan_interval_seconds": 600,
+            }))
+            with sqlite3.connect(str(legacy / "index.db")) as con:
+                con.execute("CREATE TABLE example (value TEXT)")
+                con.execute("INSERT INTO example VALUES ('migrated')")
+            with mock.patch.object(config, "__file__", str(package / "config.py")):
+                with mock.patch.dict(os.environ, {"LOCALAPPDATA": str(base / "LocalAppData"),
+                                                  "APPDATA": str(base / "OldAppData")}):
+                    settings = config.Settings.load()
+            self.assertEqual(settings.config_path, repo / "settings.json")
+            self.assertEqual(settings.db_path, repo / "index.db")
+            with sqlite3.connect(str(settings.db_path)) as con:
+                self.assertEqual(con.execute("SELECT value FROM example").fetchone()[0], "migrated")
+
     def test_old_settings_and_bad_interval(self):
         with tempfile.TemporaryDirectory() as work:
             app = Path(work)

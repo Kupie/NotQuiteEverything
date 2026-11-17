@@ -6,14 +6,34 @@ requesting administrator privileges, or using third-party Python packages.
 
 ## Run
 
+Double-click `run.pyw` on Windows, or launch it with `pythonw.exe`:
+
 ```powershell
-python run.py
+pythonw run.pyw
 ```
 
+The `.pyw` file association uses the console-free Python interpreter when
+correctly configured. Running it with `python.exe` explicitly can still show
+a console. The remaining library modules are ordinary `.py` files.
+
 Requires Python with tkinter support (normally included with the standard
-python.org Windows installer). Settings and index.db are stored under
-%LOCALAPPDATA%\NotQuiteEverything. An existing legacy profile in %APPDATA% is
-copied to the new location when possible.
+python.org Windows installer). **index.db and settings.json are stored in the
+same folder as run.pyw**, regardless of your working directory. The folder
+must be writable. On first launch, an existing database and settings in
+`%LOCALAPPDATA%\NotQuiteEverything` or `%APPDATA%\NotQuiteEverything`
+are copied/migrated to that folder when possible. The originals are not
+deleted. SQLite can create temporary `index.db-wal` and `index.db-shm`
+files beside the database.
+
+### Minimize to tray
+
+Minimize the window or click its title-bar X to hide it in the Windows
+notification area. Indexing and live monitoring continue while hidden.
+Double-click the tray icon to restore the search window, or right-click it
+for **Restore** and **Exit**. The visible Exit button also terminates the
+application. If the tray icon cannot be created, closing the window exits
+normally rather than hiding an inaccessible app. The tray uses only built-in
+Windows APIs via ctypes, without pywin32 or Pillow.
 
 ## Features
 
@@ -30,6 +50,7 @@ copied to the new location when possible.
 - Multiple scan roots, folder/basename exclusion globs, background indexing,
   per-column sorting, pages of 500 matches, and accurate match counts.
 - Windows Explorer reveal, Open, Copy Full Path and keyboard navigation.
+- Windows tray icon with minimize/close-to-tray, Restore and Exit actions.
 
 ## Search syntax
 
