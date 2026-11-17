@@ -1,6 +1,8 @@
 """Cross-platform regression tests for persistence, search, and incremental updates."""
 
+import gc
 import json
+import time
 import tempfile
 import unittest
 from pathlib import Path
@@ -12,7 +14,7 @@ from notquiteeverything.indexer import Indexer
 class IndexTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temp.cleanup)
+        self.addCleanup(self._cleanup_temp)
         self.base = Path(self.temp.name)
         self.root = self.base / "root"
         self.root.mkdir()
@@ -91,6 +93,19 @@ class IndexTests(unittest.TestCase):
         replaced.initialize()
         self.assertTrue(replaced.scan()[1])
         self.assertEqual(replaced.search("report").total, 0)
+
+    def _cleanup_temp(self):
+        # Windows indexers/antivirus can temporarily hold SQLite files open.
+        # Wait for the lock to be released rather than hiding cleanup errors.
+        for attempt in range(20):
+            gc.collect()
+            try:
+                self.temp.cleanup()
+                return
+            except PermissionError:
+                if attempt == 19:
+                    raise
+                time.sleep(0.1)
 
     def tearDown(self):
         self.indexer.stop()
